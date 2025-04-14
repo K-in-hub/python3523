@@ -1,0 +1,128 @@
+import cv2
+import numpy as np
+
+# Load COCO classes
+classesFile = 'C:/Users/240064026/PycharmProjects/PythonProject1/Resources/coco80.names'
+with open(classesFile, 'r') as f:
+    classes = f.read().strip().splitlines()
+
+# Define fruits and their prices
+fruit_prices = {
+    'apple': 1.2,  # Apple price
+    'orange': 0.8,  # Orange price
+    'banana': 0.5  # Banana price
+}
+
+# Target fruits to detect
+target_fruits = list(fruit_prices.keys())
+
+# Load YOLO model
+weights_path = "C:/Users/240064026/PycharmProjects/PythonProject1/Resources/yolov3-320.weights"
+config_path = "C:/Users/240064026/PycharmProjects/PythonProject1/Resources/yolov3-320.cfg"
+net = cv2.dnn.readNet(weights_path, config_path)
+
+# Get layer names
+layerNames = net.getLayerNames()
+outputLayers = [layerNames[i - 1] for i in net.getUnconnectedOutLayers().flatten()]
+
+# Capture video from camera
+cap = cv2.VideoCapture(0)
+
+# Detection parameters
+confidence_threshold = 0.5
+nms_threshold = 0.4
+
+while True:
+    success, img = cap.read()
+    if not success:
+        break
+
+    height, width, _ = img.shape
+
+    # Create blob and perform forward propagation
+    blob = cv2.dnn.blobFromImage(img, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+    outputs = net.forward(outputLayers)
+
+    boxes, confidences, class_ids = [], [], []
+
+    # Process detections
+    for output in outputs:
+        for detection in output:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+
+            if confidence > confidence_threshold:
+                fruit_name = classes[class_id]
+
+                if fruit_name in target_fruits:
+                    center_x = int(detection[0] * width)
+                    center_y = int(detection[1] * height)
+                    w = int(detection[2] * width)
+                    h = int(detection[3] * height)
+
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+
+                    boxes.append([x, y, w, h])
+                    confidences.append(float(confidence))
+                    class_ids.append(class_id)
+
+    # Apply Non-Maximum Suppression (NMS)
+    indices = cv2.dnn.NMSBoxes(boxes, confidences, confidence_threshold, nms_threshold)
+
+    # Initialize counters after NMS
+    total_price = 0.0
+    fruit_counts = {fruit: 0 for fruit in target_fruits}
+    confidence_values = []  # Store confidence values for display
+
+    # Draw bounding boxes and count fruits after NMS
+    if len(indices) > 0:
+        for i in indices.flatten():
+            box = boxes[i]
+            x, y, w, h = box
+            label = classes[class_ids[i]]
+            confidence = confidences[i]
+            price = fruit_prices[label]
+
+            # Draw rectangle
+            cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+            # Display fruit name, price and confidence (two lines)
+            text_line1 = f"{label} ${price:.2f}"
+            text_line2 = f"conf: {confidence:.2f}"
+
+            # First line (name and price)
+            cv2.putText(img, text_line1, (x, y - 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+            # Second line (confidence)
+            cv2.putText(img, text_line2, (x, y - 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 200), 1)
+
+            # Update counters
+            total_price += price
+            fruit_counts[label] += 1
+            confidence_values.append(confidence)
+
+    # Display total price and average confidence
+    avg_confidence = np.mean(confidence_values) if confidence_values else 0
+    cv2.putText(img, f'Total: ${total_price:.2f}', (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    cv2.putText(img, f'Avg Conf: {avg_confidence:.2f}', (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 200), 2)
+
+    # Display fruit counts
+    y_offset = 90
+    for fruit, count in fruit_counts.items():
+        cv2.putText(img, f"{fruit}: {count}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        y_offset += 30
+
+    cv2.imshow('Fruit Detection with Pricing and Confidence', img)
+    if cv2.waitKey(1) & 0xFF == 27:  # Press 'Esc' to exit
+        break
+
+cap.release()
+cv2.destroyAllWindows()
