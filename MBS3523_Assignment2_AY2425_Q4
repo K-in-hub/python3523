@@ -1,0 +1,51 @@
+import cv2
+import mediapipe as mp
+
+mp_drawing = mp.solutions.drawing_utils
+mp_hands = mp.solutions.hands
+
+
+# Function to count fingers: Detects the number of fingers raised
+def count_fingers(hand_landmarks):
+    index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+    middle_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+
+    index_up = index_tip.y < hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_MCP].y
+    middle_up = middle_tip.y < hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP].y
+
+    return 1 if index_up and not middle_up else 2 if index_up and middle_up else 0
+
+
+# Initialize webcam
+cam = cv2.VideoCapture(0)
+
+with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5) as hands:
+    while cam.isOpened():
+        ret, img = cam.read()
+        if not ret:
+            break
+
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        results = hands.process(img_rgb)
+
+        # Gesture detection
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(img, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
+                # Count fingers
+                finger_count = count_fingers(hand_landmarks)
+
+                # Display status
+                if finger_count == 1:
+                    cv2.putText(img, "OPEN", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
+                elif finger_count == 2:
+                    cv2.putText(img, "CLOSE", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
+
+        cv2.imshow('Finger Gesture Recognition', img)
+
+        if cv2.waitKey(5) & 0xFF == 27:  # Press ESC to exit
+            break
+
+cam.release()
+cv2.destroyAllWindows()
